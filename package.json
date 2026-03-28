@@ -1,0 +1,13 @@
+{
+  "name": "omni-wallet",
+  "version": "1.0.0",
+  "description": "OMNIPAY-Legacy Omni Wallet module - South African digital wallet system",
+  "type": "module",
+  "main": "src/app.js",
+  "scripts": {
+    "dev": "node --watch src/app.js",
+    "start": "node src/app.js"
+  },
+  "keywords": ["fintech", "wallet", "postgresql", "express"],
+  "license": "MIT"
+}
