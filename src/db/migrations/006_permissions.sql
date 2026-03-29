@@ -1,17 +1,3 @@
--- ============================================================================
--- PERMISSIONS MIGRATION
--- ============================================================================
--- ⚠️  WARNING: Never run this file directly.
--- Create the omni_app user manually using the password from your .env file:
---   CREATE USER omni_app WITH PASSWORD 'your_password_from_env';
--- Then run this file to grant permissions.
--- ============================================================================
-
--- Create the restricted application database user
--- The password placeholder <DB_APP_PASSWORD> should be replaced with the actual
--- password from your .env file when creating this user manually
-CREATE USER omni_app WITH PASSWORD '<DB_APP_PASSWORD>';
-
 -- Grant USAGE on all schemas so the application can access objects within them
 GRANT USAGE ON SCHEMA identity TO omni_app;
 GRANT USAGE ON SCHEMA financial TO omni_app;
