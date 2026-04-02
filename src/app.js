@@ -1,10 +1,11 @@
-import express from "express";
-import cors from "cors";
-import helmet from "helmet";
-import { config } from "./config/index.js";
-import authRouter from './routes/auth.js'
-import logger from "./middleware/logger.js";
-import errorHandler from "./middleware/errorHandler.js";
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import { config } from './config/index.js';
+import authRouter from './routes/auth.js';
+import logger from './middleware/logger.js';
+import errorHandler from './middleware/errorHandler.js';
+import accountsRouter from './routes/accounts.js';
 
 const app = express();
 
@@ -14,12 +15,13 @@ app.use(helmet());
 app.use(logger);
 
 // Health check
-app.get("/", (req, res) => {
-  res.send("Hello World!");
+app.get('/', (req, res) => {
+  res.send('Hello World!');
 });
 
 // Routes
 app.use('/auth', authRouter);
+app.use('/accounts', accountsRouter);
 
 // 404 handler (must be after all routes)
 app.use((req, res) => {
