@@ -1,10 +1,11 @@
 import pg from "pg";
-import { config } from "../config";
+import { config } from "../config/index.js";
 
 const { Pool } = pg;
 
 const pool = new Pool({
   connectionString: config.db.appUrl,
+  ssl: config.env === 'production' ? { rejectUnauthorized: true } : false,
 });
 
 pool.on("error", (err) => {

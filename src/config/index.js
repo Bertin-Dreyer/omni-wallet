@@ -3,9 +3,6 @@ import 'dotenv/config'
 const required = [
 'PORT',
 'NODE_ENV',
-'DATABASE_URL',
-'DB_APP_USER',
-'DB_APP_PASSWORD',
 'DB_APP_URL',
 'JWT_ACCESS_SECRET',
 'JWT_REFRESH_SECRET',
@@ -24,8 +21,6 @@ export const config = {
 
   db: {
     appUrl: process.env.DB_APP_URL,
-    appUser: process.env.DB_APP_USER,
-    appPassword: process.env.DB_APP_PASSWORD,
   },
 
   jwt: {
