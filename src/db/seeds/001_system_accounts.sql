@@ -3,9 +3,9 @@
 -- They must exist before any money can move through the ledger.
 -- Safe to run multiple times (ON CONFLICT DO NOTHING).
 
-INSERT INTO financial.system_accounts (name, description)
-VALUES 
-  ('SYSTEM_CASH', 'Real cash flowing in/out of the business'),
-  ('SYSTEM_FEE', 'Fees collected from transactions'),
-  ('SYSTEM_SUSPENSE', 'Temporary holding for failed or pending transactions')
-ON CONFLICT DO NOTHING;
+INSERT INTO financial.accounts (account_number, currency, status, is_system)
+VALUES
+  ('SYS-CASH', 'ZAR', 'ACTIVE', TRUE),
+  ('SYS-FEE', 'ZAR', 'ACTIVE', TRUE),
+  ('SYS-SUSP', 'ZAR', 'ACTIVE', TRUE)
+ON CONFLICT (account_number) DO NOTHING;
