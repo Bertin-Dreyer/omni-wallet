@@ -108,7 +108,78 @@ router.post('/deposit', async (req, res) => {
       return error(res, 'System cash account not found', 500);
     }
     const sysCashAccountId = sysCashResult.rows[0].id;
-  } catch (error) {}
+
+    // Transaction block
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Insert transaction record
+      const txResult = await client.query(
+        `INSERT INTO financial.transactions
+         (id, from_account_id, to_account_id, amount_cents, description, idempotency_key, status, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'PENDING', NOW(), NOW())
+         RETURNING id, created_at`,
+        [
+          sysCashAccountId,
+          userAccountId,
+          amount_cents,
+          description,
+          idempotencyKey,
+        ]
+      );
+
+      const transactionId = txResult.rows[0].id;
+
+      // Get balance before for snapshot
+      const beforeResult = await client.query(
+        `SELECT COALESCE(SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents WHEN entry_type = 'DEBIT' THEN -amount_cents END), 0) AS balance_cents
+         FROM financial.ledger_entries WHERE account_id = $1`,
+        [userAccountId]
+      );
+      const balanceBefore = parseInt(beforeResult.rows[0].balance_cents, 10);
+
+      // DEBIT SYS-CASH (money enters system)
+      await client.query(
+        `INSERT INTO financial.ledger_entries (id, account_id, transaction_id, entry_type, amount_cents, created_at)
+         VALUES (gen_random_uuid(), $1, $2, 'DEBIT', $3, NOW())`,
+        [sysCashAccountId, transactionId, amount_cents]
+      );
+
+      // CREDIT user wallet (money arrives in wallet)
+      const balanceAfter = balanceBefore + amount_cents;
+      await client.query(
+        `INSERT INTO financial.ledger_entries (id, account_id, transaction_id, entry_type, amount_cents, balance_snapshot, created_at)
+         VALUES (gen_random_uuid(), $1, $2, 'CREDIT', $3, $4, NOW())`,
+        [userAccountId, transactionId, amount_cents, balanceAfter]
+      );
+
+      // Update transaction to COMPLETED
+      await client.query(
+        `UPDATE financial.transactions SET status = 'COMPLETED', updated_at = NOW() WHERE id = $1`,
+        [transactionId]
+      );
+
+      await client.query('COMMIT');
+
+      return success(res, {
+        transaction_id: transactionId,
+        amount_cents,
+        description,
+        balance_cents: balanceAfter,
+        created_at: txResult.rows[0].created_at,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Transaction error:', err);
+      return error(res, 'Deposit failed', 500);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('POST /deposit error:', error);
+    return error(res, 'Internal server error', 500);
+  }
 });
 
 export default router;
