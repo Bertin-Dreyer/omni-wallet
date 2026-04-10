@@ -108,7 +108,38 @@ router.post('/deposit', async (req, res) => {
       return error(res, 'System cash account not found', 500);
     }
     const sysCashAccountId = sysCashResult.rows[0].id;
-  } catch (error) {}
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const transactionRef = `OW-DEP-${Date.now()}`;
+      const transactionResult = await client.query(
+        `INSERT INTO financial.transactions
+        (reference, type, status, amount_cents, from_account_id, to_account_id, description, idempotency_key)
+        VALUES ($1, 'DEPOSIT', 'PENDING', $2, NULL, $3, $4, $5)
+        RETURNING *`,
+        [transactionRef, amount_cents, userAccountId, description, idempotencyKey]
+      );
+      const transaction = transactionResult.rows[0];
+
+      await client.query('COMMIT');
+
+      return success(res, {
+        transaction_id: transaction.id,
+        status: transaction.status,
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Transaction error:', error);
+      return error(res, 'Transaction failed', 500);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+      console.error('POST /accounts/deposit error:', error);
+      return error(res, 'Internal server error', 500);
+  }
 });
 
 export default router;
