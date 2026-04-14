@@ -166,7 +166,7 @@ router.post('/deposit', async (req, res) => {
           transaction.id,
           sysCashAccountId,
           amount_cents,
-          sysCashBalance + amount_cents,
+          sysCashBalance - amount_cents,
         ]
       );
 
@@ -203,17 +203,17 @@ router.post('/deposit', async (req, res) => {
           transaction: transaction,
           balance: newBalance,
         },
-        201
+        'Deposit successful'
       );
-    } catch (error) {
+    } catch (err) {
       await client.query('ROLLBACK');
-      console.error('Transaction error:', error);
+      console.error('Transaction error:', err);
       return error(res, 'Transaction failed', 500);
     } finally {
       client.release();
     }
-  } catch (error) {
-    console.error('POST /accounts/deposit error:', error);
+  } catch (err) {
+    console.error('POST /accounts/deposit error:', err);
     return error(res, 'Internal server error', 500);
   }
 });
@@ -298,7 +298,7 @@ router.post('/transfer', async (req, res) => {
       WHERE account_id = $1`,
       [senderAccountId]
     );
-    const senderBalance = balanceResult.rows[0].balance_cents;
+    const senderBalance = parseInt(balanceResult.rows[0].balance_cents, 10);
 
     if (senderBalance < amount_cents) {
       return error(res, 'Insufficient funds', 400);
@@ -392,7 +392,6 @@ router.post('/transfer', async (req, res) => {
 
       // STEP 5e: Commit Transaction
       await client.query('COMMIT');
-      client.release();
 
       // STEP 5f: Return Success Response
       const newBalance = senderBalanceBefore - amount_cents;
@@ -402,13 +401,14 @@ router.post('/transfer', async (req, res) => {
           transaction: transaction,
           balance: newBalance,
         },
-        201
+        'Deposit successful'
       );
     } catch (err) {
       await client.query('ROLLBACK');
-      client.release();
       console.error('Transfer transaction error:', err);
       return error(res, 'Transfer failed', 500);
+    } finally {
+      client.release();
     }
   } catch (err) {
     console.error('POST /accounts/transfer error:', err);
