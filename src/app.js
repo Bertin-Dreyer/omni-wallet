@@ -6,6 +6,7 @@ import authRouter from './routes/auth.js';
 import logger from './middleware/logger.js';
 import errorHandler from './middleware/errorHandler.js';
 import accountsRouter from './routes/accounts.js';
+import transactionsRouter from './routes/transactions.js';
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.get('/', (req, res) => {
 // Routes
 app.use('/auth', authRouter);
 app.use('/accounts', accountsRouter);
+app.use('/transactions', transactionsRouter);
 
 // 404 handler (must be after all routes)
 app.use((req, res) => {
