@@ -23,8 +23,8 @@ router.get('/me', async (req, res) => {
       return error(res, 'No accounts found', 404);
     }
     return success(res, accounts.rows[0]);
-  } catch (error) {
-    console.error('GET /accounts/me error:', error);
+  } catch (err) {
+    console.error('GET /accounts/me error:', err);
     return error(res, 'Internal server error', 500);
   }
 });
@@ -58,8 +58,8 @@ router.get('/me/balance', async (req, res) => {
     return success(res, {
       balance_cents: parseInt(balanceResult.rows[0].balance_cents, 10),
     });
-  } catch (error) {
-    console.error('GET /accounts/me/balance error:', error);
+  } catch (err) {
+    console.error('GET /accounts/me/balance error:', err);
     return error(res, 'Internal server error', 500);
   }
 });
@@ -142,7 +142,7 @@ router.post('/deposit', async (req, res) => {
         [sysCashAccountId]
       );
 
-      const sysCashBalance = sysCashBalanceResult.rows[0].balance_cents;
+      const sysCashBalance = parseInt(sysCashBalanceResult.rows[0].balance_cents, 10);
 
       // Get user balance snapshot
       const userBalanceResult = await client.query(
@@ -155,7 +155,7 @@ router.post('/deposit', async (req, res) => {
         WHERE account_id = $1`,
         [userAccountId]
       );
-      const userBalance = userBalanceResult.rows[0].balance_cents;
+      const userBalance = parseInt(userBalanceResult.rows[0].balance_cents, 10);
 
       // Insert ledger entries
       await client.query(
