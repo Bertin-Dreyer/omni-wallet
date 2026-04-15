@@ -23,8 +23,8 @@ router.get('/me', async (req, res) => {
       return error(res, 'No accounts found', 404);
     }
     return success(res, accounts.rows[0]);
-  } catch (err) {
-    console.error('GET /accounts/me error:', err);
+  } catch (error) {
+    console.error('GET /accounts/me error:', error);
     return error(res, 'Internal server error', 500);
   }
 });
@@ -58,8 +58,8 @@ router.get('/me/balance', async (req, res) => {
     return success(res, {
       balance_cents: parseInt(balanceResult.rows[0].balance_cents, 10),
     });
-  } catch (err) {
-    console.error('GET /accounts/me/balance error:', err);
+  } catch (error) {
+    console.error('GET /accounts/me/balance error:', error);
     return error(res, 'Internal server error', 500);
   }
 });
@@ -166,7 +166,7 @@ router.post('/deposit', async (req, res) => {
           transaction.id,
           sysCashAccountId,
           amount_cents,
-          sysCashBalance - amount_cents,
+          sysCashBalance + amount_cents,
         ]
       );
 
@@ -340,7 +340,7 @@ router.post('/transfer', async (req, res) => {
         WHERE account_id = $1`,
         [senderAccountId]
       );
-      const senderBalanceBefore = senderBalanceResult.rows[0].balance_cents;
+      const senderBalanceBefore = parseInt(senderBalanceResult.rows[0].balance_cents, 10);
 
       // Receiver balance before CREDIT
       const receiverBalanceResult = await client.query(
@@ -353,7 +353,7 @@ router.post('/transfer', async (req, res) => {
         WHERE account_id = $1`,
         [receiverAccountId]
       );
-      const receiverBalanceBefore = receiverBalanceResult.rows[0].balance_cents;
+      const receiverBalanceBefore = parseInt(receiverBalanceResult.rows[0].balance_cents, 10);
 
       // STEP 5c: Insert Ledger Entries (Double-Entry)
       // DEBIT on sender (money leaves)
@@ -401,7 +401,7 @@ router.post('/transfer', async (req, res) => {
           transaction: transaction,
           balance: newBalance,
         },
-        'Deposit successful'
+        'Transfer successful'
       );
     } catch (err) {
       await client.query('ROLLBACK');
