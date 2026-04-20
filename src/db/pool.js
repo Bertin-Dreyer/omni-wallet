@@ -4,7 +4,7 @@ import { config } from "../config/index.js";
 const { Pool } = pg;
 
 const pool = new Pool({
-  connectionString: config.db.appUrl,
+  connectionString: process.env.DB_APP_URL,
   ssl: config.env === 'production' ? { rejectUnauthorized: true } : false,
 });
 
