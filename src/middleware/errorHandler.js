@@ -21,7 +21,7 @@ function errorHandler(err, req, res, next) {
   if (err.name === 'ValidationError') {
     return res.status(400).json({
       status: false,
-      error: config.env === 'development' ? err.message : 'Validation failed',
+      error: 'Validation failed',
     });
   }
 
@@ -29,9 +29,7 @@ function errorHandler(err, req, res, next) {
   const statusCode = err.statusCode || 500;
   res.status(statusCode).json({
     status: false,
-    error: config.env === 'development'
-      ? (err.message || 'Internal Server Error')
-      : 'Internal Server Error',
+    error: 'Internal Server Error',
   });
 }
 

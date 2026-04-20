@@ -20,7 +20,7 @@ router.get('/me', async (req, res) => {
       [userId]
     );
     if (accounts.rows.length === 0) {
-      return error(res, 'No accounts found', 404);
+      return error(res, 'Account not found', 404);
     }
     return success(res, accounts.rows[0]);
   } catch (err) {
@@ -83,16 +83,21 @@ router.post('/deposit', async (req, res) => {
       return error(res, 'Idempotency key required', 400);
     }
 
-    // Check if already used
-    const existingTx = await pool.query(
-      'SELECT id FROM financial.transactions WHERE idempotency_key = $1',
-      [idempotencyKey]
-    );
-    if (existingTx.rows.length > 0) {
-      return error(res, 'Duplicate request', 409);
-    }
-
     const userId = req.user.id;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Check if already used inside transaction
+      const existingTx = await client.query(
+        'SELECT id FROM financial.transactions WHERE idempotency_key = $1',
+        [idempotencyKey]
+      );
+      if (existingTx.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return error(res, 'Duplicate request', 409);
+      }
     const accountResult = await pool.query(
       'SELECT id FROM financial.accounts WHERE user_id = $1',
       [userId]
@@ -111,25 +116,21 @@ router.post('/deposit', async (req, res) => {
     }
     const sysCashAccountId = sysCashResult.rows[0].id;
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      const transactionRef = `OW-DEP-${Date.now()}`;
-      const transactionResult = await client.query(
-        `INSERT INTO financial.transactions
-        (reference, type, status, amount_cents, from_account_id, to_account_id, description, idempotency_key)
-        VALUES ($1, 'DEPOSIT', 'PENDING', $2, NULL, $3, $4, $5)
-        RETURNING *`,
-        [
-          transactionRef,
-          amount_cents,
-          userAccountId,
-          description,
-          idempotencyKey,
-        ]
-      );
-      const transaction = transactionResult.rows[0];
+    const transactionRef = `OW-DEP-${Date.now()}`;
+    const transactionResult = await client.query(
+      `INSERT INTO financial.transactions
+      (reference, type, status, amount_cents, from_account_id, to_account_id, description, idempotency_key)
+      VALUES ($1, 'DEPOSIT', 'PENDING', $2, NULL, $3, $4, $5)
+      RETURNING *`,
+      [
+        transactionRef,
+        amount_cents,
+        userAccountId,
+        description,
+        idempotencyKey,
+      ]
+    );
+    const transaction = transactionResult.rows[0];
 
       // Get balance snapshot before the ledger entries
 
@@ -230,7 +231,7 @@ router.post('/transfer', async (req, res) => {
     // STEP 1: Input Validation with Zod
     // Validates: to_account_number (10 digits), amount_cents (positive), description
     const transferSchema = z.object({
-      to_account_number: z.string().min(10).max(10),
+      to_account_number: z.string().regex(/^\d{10}$/),
       amount_cents: z.number().int().positive(),
       description: z.string().min(1).max(255),
     });

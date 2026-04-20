@@ -7,6 +7,7 @@ import logger from './middleware/logger.js';
 import errorHandler from './middleware/errorHandler.js';
 import accountsRouter from './routes/accounts.js';
 import transactionsRouter from './routes/transactions.js';
+import { financialLimiter, authLimiter } from './middleware/rateLimiter.js';
 
 const app = express();
 
@@ -19,6 +20,11 @@ app.use(logger);
 app.get('/', (req, res) => {
   res.send('Hello World!');
 });
+
+// Routes
+// Apply rate limiting to financial routes
+app.use('/accounts', financialLimiter);
+app.use('/transactions', financialLimiter);
 
 // Routes
 app.use('/auth', authRouter);
