@@ -250,20 +250,9 @@ router.post('/transfer', async (req, res) => {
       return error(res, 'Idempotency key required', 400);
     }
 
-    // Check if idempotency key already used
-    const existingTx = await pool.query(
-      'SELECT id FROM financial.transactions WHERE idempotency_key = $1',
-      [idempotencyKey]
-    );
-    if (existingTx.rows.length > 0) {
-      return error(res, 'Duplicate request', 409);
-    }
-
-    // STEP 3: Get Sender and Receiver Account IDs
-    // req.user.id from JWT (BOLA protection - can't be manipulated)
+    // STEP 3: Get Sender Account ID
     const userId = req.user.id;
 
-    // Get sender's account
     const senderResult = await pool.query(
       'SELECT id FROM financial.accounts WHERE user_id = $1',
       [userId]
@@ -288,30 +277,40 @@ router.post('/transfer', async (req, res) => {
       return error(res, 'Cannot transfer to your own account', 400);
     }
 
-    // STEP 4: Check Sender Balance BEFORE transaction
-    const balanceResult = await pool.query(
-      `SELECT COALESCE(
-        SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
-                WHEN entry_type = 'DEBIT' THEN -amount_cents
-                ELSE 0 END), 0
-      ) AS balance_cents
-      FROM financial.ledger_entries
-      WHERE account_id = $1`,
-      [senderAccountId]
-    );
-    const senderBalance = parseInt(balanceResult.rows[0].balance_cents, 10);
-
-    if (senderBalance < amount_cents) {
-      return error(res, 'Insufficient funds', 400);
-    }
-
-    // STEP 5: Database Transaction (BEGIN/COMMIT/ROLLBACK)
+    // STEP 4: Database Transaction with Idempotency Check Inside
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
+      // Check idempotency inside transaction to prevent TOCTOU race condition
+      const existingTx = await client.query(
+        'SELECT id FROM financial.transactions WHERE idempotency_key = $1',
+        [idempotencyKey]
+      );
+      if (existingTx.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return error(res, 'Duplicate request', 409);
+      }
+
+      // Get sender balance for validation
+      const balanceResult = await client.query(
+        `SELECT COALESCE(
+          SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
+                  WHEN entry_type = 'DEBIT' THEN -amount_cents
+                  ELSE 0 END), 0
+        ) AS balance_cents
+        FROM financial.ledger_entries
+        WHERE account_id = $1`,
+        [senderAccountId]
+      );
+      const senderBalance = parseInt(balanceResult.rows[0].balance_cents, 10);
+
+      if (senderBalance < amount_cents) {
+        await client.query('ROLLBACK');
+        return error(res, 'Insufficient funds', 400);
+      }
+
       // STEP 5a: Create Transaction Record
-      // Reference: OW-XF-{timestamp}, Type: TRANSFER, Status: PENDING
       const transactionRef = `OW-XF-${Date.now()}`;
       const transactionResult = await client.query(
         `INSERT INTO financial.transactions
@@ -329,8 +328,7 @@ router.post('/transfer', async (req, res) => {
       );
       const transaction = transactionResult.rows[0];
 
-      // STEP 5b: Get Balance Snapshots BEFORE Ledger Entries
-      // Sender balance before DEBIT
+      // STEP 5b: Get Balance Snapshots Before Ledger Entries
       const senderBalanceResult = await client.query(
         `SELECT COALESCE(
           SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
@@ -343,7 +341,6 @@ router.post('/transfer', async (req, res) => {
       );
       const senderBalanceBefore = parseInt(senderBalanceResult.rows[0].balance_cents, 10);
 
-      // Receiver balance before CREDIT
       const receiverBalanceResult = await client.query(
         `SELECT COALESCE(
           SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
@@ -357,7 +354,6 @@ router.post('/transfer', async (req, res) => {
       const receiverBalanceBefore = parseInt(receiverBalanceResult.rows[0].balance_cents, 10);
 
       // STEP 5c: Insert Ledger Entries (Double-Entry)
-      // DEBIT on sender (money leaves)
       await client.query(
         `INSERT INTO financial.ledger_entries
         (transaction_id, account_id, entry_type, amount_cents, balance_cents)
@@ -370,7 +366,6 @@ router.post('/transfer', async (req, res) => {
         ]
       );
 
-      // CREDIT on receiver (money arrives)
       await client.query(
         `INSERT INTO financial.ledger_entries
         (transaction_id, account_id, entry_type, amount_cents, balance_cents)
@@ -391,10 +386,8 @@ router.post('/transfer', async (req, res) => {
         [transaction.id]
       );
 
-      // STEP 5e: Commit Transaction
       await client.query('COMMIT');
 
-      // STEP 5f: Return Success Response
       const newBalance = senderBalanceBefore - amount_cents;
       return success(
         res,
@@ -406,6 +399,9 @@ router.post('/transfer', async (req, res) => {
       );
     } catch (err) {
       await client.query('ROLLBACK');
+      if (err.code === '23505') {
+        return error(res, 'Duplicate request', 409);
+      }
       console.error('Transfer transaction error:', err);
       return error(res, 'Transfer failed', 500);
     } finally {
