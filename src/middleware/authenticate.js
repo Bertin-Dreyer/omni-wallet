@@ -1,8 +1,8 @@
-import jwt from 'jsonwebtoken';
+import { verifyToken } from '../utils/tokens.js';
 import { config } from '../config/index.js';
 import { unauthorized } from '../utils/response.js';
 
-export function authenticateJWT(req, res, next) {
+export async function authenticateJWT(req, res, next) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -11,12 +11,11 @@ export function authenticateJWT(req, res, next) {
 
   const token = authHeader.split(' ')[1];
 
-  jwt.verify(token, config.jwt.accessSecret, (err, user) => {
-    if (err) {
-      return unauthorized(res, 'Unauthorized');
-    }
-
+  try {
+    const user = await verifyToken(token, config.jwt.accessSecret);
     req.user = { id: user.sub };
     next();
-  });
+  } catch {
+    return unauthorized(res, 'Unauthorized');
+  }
 }
