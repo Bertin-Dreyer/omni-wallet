@@ -209,7 +209,7 @@ router.post('/refresh', async (req, res) => {
       return unauthorized(res, 'Invalid or expired refresh token');
     }
 
-    const decoded = verifyToken(refreshToken, config.jwt.refreshSecret);
+    const decoded = await verifyToken(refreshToken, config.jwt.refreshSecret);
 
     await revokeRefreshToken(pool, refreshToken);
 
