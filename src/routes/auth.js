@@ -2,23 +2,13 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { randomInt } from 'crypto';
-import rateLimit from 'express-rate-limit';
 import pool from '../db/pool.js';
+import { authLimiter } from '../middleware/rateLimiter.js';
 import { generateTokens, verifyToken, hashToken } from '../utils/tokens.js';
 import { created, success, error, unauthorized } from '../utils/response.js';
 import { config } from '../config/index.js';
 
 const router = express.Router();
-
-// --- Rate Limiting ---
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { status: false, error: 'Too many requests, please try again later' },
-});
 
 router.use(authLimiter);
 
