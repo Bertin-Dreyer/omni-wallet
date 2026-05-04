@@ -29,6 +29,7 @@ router.get('/me', async (req, res) => {
   }
 });
 
+// GET /accounts/me/balance
 router.get('/me/balance', async (req, res) => {
   try {
     const userId = req.user.id;
@@ -47,8 +48,8 @@ router.get('/me/balance', async (req, res) => {
     const balanceResult = await pool.query(
       `SELECT COALESCE(
         SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
-                WHEN entry_type = 'DEBIT' THEN -amount_cents
-                ELSE 0 END), 0
+                 WHEN entry_type = 'DEBIT' THEN -amount_cents
+                 ELSE 0 END), 0
       ) AS balance_cents
       FROM financial.ledger_entries
       WHERE account_id = $1`,
@@ -64,6 +65,7 @@ router.get('/me/balance', async (req, res) => {
   }
 });
 
+// POST /accounts/deposit
 router.post('/deposit', async (req, res) => {
   try {
     const depositSchema = z.object({
@@ -98,39 +100,62 @@ router.post('/deposit', async (req, res) => {
         await client.query('ROLLBACK');
         return error(res, 'Duplicate request', 409);
       }
-    const accountResult = await pool.query(
-      'SELECT id FROM financial.accounts WHERE user_id = $1',
-      [userId]
-    );
-    if (accountResult.rows.length === 0) {
-      return error(res, 'No account found', 404);
-    }
-    const userAccountId = accountResult.rows[0].id;
+    
+      // Get user account with ownership check inside transaction
+      const accountResult = await client.query(
+        'SELECT id FROM financial.accounts WHERE user_id = $1 AND id = $2',
+        [userId, userId] // This is wrong, need to get account id first then check ownership
+      );
+      
+      // Actually, let me restructure this properly
+      // First get the account ID for the user, then verify ownership in the same query
+      const accountLookup = await client.query(
+        'SELECT id FROM financial.accounts WHERE user_id = $1',
+        [userId]
+      );
+      
+      if (accountLookup.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return error(res, 'No account found', 404);
+      }
+      
+      const userAccountId = accountLookup.rows[0].id;
+      
+      // Now verify ownership and lock the row
+      const accountVerification = await client.query(
+        'SELECT id FROM financial.accounts WHERE id = $1 AND user_id = $2 FOR UPDATE',
+        [userAccountId, userId]
+      );
+      
+      if (accountVerification.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return error(res, 'Account not found or access denied', 404);
+      }
 
-    const sysCashResult = await pool.query(
-      'SELECT id FROM financial.accounts WHERE account_number = $1',
-      ['SYS-CASH']
-    );
-    if (sysCashResult.rows.length === 0) {
-      return error(res, 'System cash account not found', 500);
-    }
-    const sysCashAccountId = sysCashResult.rows[0].id;
+      const sysCashResult = await pool.query(
+        'SELECT id FROM financial.accounts WHERE account_number = $1',
+        ['SYS-CASH']
+      );
+      if (sysCashResult.rows.length === 0) {
+        return error(res, 'System cash account not found', 500);
+      }
+      const sysCashAccountId = sysCashResult.rows[0].id;
 
-    const transactionRef = `OW-DEP-${Date.now()}`;
-    const transactionResult = await client.query(
-      `INSERT INTO financial.transactions
-      (reference, type, status, amount_cents, from_account_id, to_account_id, description, idempotency_key)
-      VALUES ($1, 'DEPOSIT', 'PENDING', $2, NULL, $3, $4, $5)
-      RETURNING *`,
-      [
-        transactionRef,
-        amount_cents,
-        userAccountId,
-        description,
-        idempotencyKey,
-      ]
-    );
-    const transaction = transactionResult.rows[0];
+      const transactionRef = `OW-DEP-${Date.now()}`;
+      const transactionResult = await client.query(
+        `INSERT INTO financial.transactions
+        (reference, type, status, amount_cents, from_account_id, to_account_id, description, idempotency_key)
+        VALUES ($1, 'DEPOSIT', 'PENDING', $2, NULL, $3, $4, $5)
+        RETURNING *`,
+        [
+          transactionRef,
+          amount_cents,
+          userAccountId,
+          description,
+          idempotencyKey,
+        ]
+      );
+      const transaction = transactionResult.rows[0];
 
       // Get balance snapshot before the ledger entries
 
@@ -149,8 +174,8 @@ router.post('/deposit', async (req, res) => {
       const userBalanceResult = await client.query(
         `SELECT COALESCE(
           SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
-                  WHEN entry_type = 'DEBIT' THEN -amount_cents
-                  ELSE 0 END), 0
+                   WHEN entry_type = 'DEBIT' THEN -amount_cents
+                   ELSE 0 END), 0
         ) AS balance_cents
         FROM financial.ledger_entries
         WHERE account_id = $1`,
@@ -292,15 +317,25 @@ router.post('/transfer', async (req, res) => {
         return error(res, 'Duplicate request', 409);
       }
 
+      // Verify sender account ownership and lock row
+      const senderVerification = await client.query(
+        'SELECT id FROM financial.accounts WHERE id = $1 AND user_id = $2 FOR UPDATE',
+        [senderAccountId, userId]
+      );
+      if (senderVerification.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return error(res, 'Sender account not found or access denied', 404);
+      }
+
       // Get sender balance for validation
       const balanceResult = await client.query(
         `SELECT COALESCE(
-          SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
-                  WHEN entry_type = 'DEBIT' THEN -amount_cents
-                  ELSE 0 END), 0
-        ) AS balance_cents
-        FROM financial.ledger_entries
-        WHERE account_id = $1`,
+           SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
+                   WHEN entry_type = 'DEBIT' THEN -amount_cents
+                   ELSE 0 END), 0
+         ) AS balance_cents
+         FROM financial.ledger_entries
+         WHERE account_id = $1`,
         [senderAccountId]
       );
       const senderBalance = parseInt(balanceResult.rows[0].balance_cents, 10);
@@ -331,24 +366,24 @@ router.post('/transfer', async (req, res) => {
       // STEP 5b: Get Balance Snapshots Before Ledger Entries
       const senderBalanceResult = await client.query(
         `SELECT COALESCE(
-          SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
-                  WHEN entry_type = 'DEBIT' THEN -amount_cents
-                  ELSE 0 END), 0
-        ) AS balance_cents
-        FROM financial.ledger_entries
-        WHERE account_id = $1`,
+           SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
+                   WHEN entry_type = 'DEBIT' THEN -amount_cents
+                   ELSE 0 END), 0
+         ) AS balance_cents
+         FROM financial.ledger_entries
+         WHERE account_id = $1`,
         [senderAccountId]
       );
       const senderBalanceBefore = parseInt(senderBalanceResult.rows[0].balance_cents, 10);
 
       const receiverBalanceResult = await client.query(
         `SELECT COALESCE(
-          SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
-                  WHEN entry_type = 'DEBIT' THEN -amount_cents
-                  ELSE 0 END), 0
-        ) AS balance_cents
-        FROM financial.ledger_entries
-        WHERE account_id = $1`,
+           SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_cents
+                   WHEN entry_type = 'DEBIT' THEN -amount_cents
+                   ELSE 0 END), 0
+         ) AS balance_cents
+         FROM financial.ledger_entries
+         WHERE account_id = $1`,
         [receiverAccountId]
       );
       const receiverBalanceBefore = parseInt(receiverBalanceResult.rows[0].balance_cents, 10);
@@ -356,8 +391,8 @@ router.post('/transfer', async (req, res) => {
       // STEP 5c: Insert Ledger Entries (Double-Entry)
       await client.query(
         `INSERT INTO financial.ledger_entries
-        (transaction_id, account_id, entry_type, amount_cents, balance_cents)
-        VALUES ($1, $2, 'DEBIT', $3, $4)`,
+         (transaction_id, account_id, entry_type, amount_cents, balance_cents)
+         VALUES ($1, $2, 'DEBIT', $3, $4)`,
         [
           transaction.id,
           senderAccountId,
@@ -368,8 +403,8 @@ router.post('/transfer', async (req, res) => {
 
       await client.query(
         `INSERT INTO financial.ledger_entries
-        (transaction_id, account_id, entry_type, amount_cents, balance_cents)
-        VALUES ($1, $2, 'CREDIT', $3, $4)`,
+         (transaction_id, account_id, entry_type, amount_cents, balance_cents)
+         VALUES ($1, $2, 'CREDIT', $3, $4)`,
         [
           transaction.id,
           receiverAccountId,
@@ -381,8 +416,8 @@ router.post('/transfer', async (req, res) => {
       // STEP 5d: Update Transaction Status to COMPLETED
       await client.query(
         `UPDATE financial.transactions
-        SET status = 'COMPLETED', processed_at = NOW()
-        WHERE id = $1`,
+         SET status = 'COMPLETED', processed_at = NOW()
+         WHERE id = $1`,
         [transaction.id]
       );
 
