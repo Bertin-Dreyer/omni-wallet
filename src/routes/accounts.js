@@ -100,43 +100,24 @@ router.post('/deposit', async (req, res) => {
         await client.query('ROLLBACK');
         return error(res, 'Duplicate request', 409);
       }
-    
-      // Get user account with ownership check inside transaction
+
+      // Get user account with ownership check and lock inside transaction
       const accountResult = await client.query(
-        'SELECT id FROM financial.accounts WHERE user_id = $1 AND id = $2',
-        [userId, userId] // This is wrong, need to get account id first then check ownership
-      );
-      
-      // Actually, let me restructure this properly
-      // First get the account ID for the user, then verify ownership in the same query
-      const accountLookup = await client.query(
-        'SELECT id FROM financial.accounts WHERE user_id = $1',
+        'SELECT id FROM financial.accounts WHERE user_id = $1 FOR UPDATE',
         [userId]
       );
-      
-      if (accountLookup.rows.length === 0) {
+      if (accountResult.rows.length === 0) {
         await client.query('ROLLBACK');
         return error(res, 'No account found', 404);
       }
-      
-      const userAccountId = accountLookup.rows[0].id;
-      
-      // Now verify ownership and lock the row
-      const accountVerification = await client.query(
-        'SELECT id FROM financial.accounts WHERE id = $1 AND user_id = $2 FOR UPDATE',
-        [userAccountId, userId]
-      );
-      
-      if (accountVerification.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return error(res, 'Account not found or access denied', 404);
-      }
+      const userAccountId = accountResult.rows[0].id;
 
-      const sysCashResult = await pool.query(
-        'SELECT id FROM financial.accounts WHERE account_number = $1',
+      const sysCashResult = await client.query(
+        'SELECT id FROM financial.accounts WHERE account_number = $1 FOR UPDATE',
         ['SYS-CASH']
       );
       if (sysCashResult.rows.length === 0) {
+        await client.query('ROLLBACK');
         return error(res, 'System cash account not found', 500);
       }
       const sysCashAccountId = sysCashResult.rows[0].id;
@@ -275,34 +256,10 @@ router.post('/transfer', async (req, res) => {
       return error(res, 'Idempotency key required', 400);
     }
 
-    // STEP 3: Get Sender Account ID
+    // STEP 3: Get authenticated user ID
     const userId = req.user.id;
 
-    const senderResult = await pool.query(
-      'SELECT id FROM financial.accounts WHERE user_id = $1',
-      [userId]
-    );
-    if (senderResult.rows.length === 0) {
-      return error(res, 'Sender account not found', 404);
-    }
-    const senderAccountId = senderResult.rows[0].id;
-
-    // Get receiver's account by account_number
-    const receiverResult = await pool.query(
-      'SELECT id FROM financial.accounts WHERE account_number = $1',
-      [to_account_number]
-    );
-    if (receiverResult.rows.length === 0) {
-      return error(res, 'Receiver account not found', 404);
-    }
-    const receiverAccountId = receiverResult.rows[0].id;
-
-    // Prevent self-transfer
-    if (senderAccountId === receiverAccountId) {
-      return error(res, 'Cannot transfer to your own account', 400);
-    }
-
-    // STEP 4: Database Transaction with Idempotency Check Inside
+    // STEP 4: Database Transaction with all checks inside
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -317,14 +274,42 @@ router.post('/transfer', async (req, res) => {
         return error(res, 'Duplicate request', 409);
       }
 
-      // Verify sender account ownership and lock row
+      // Get sender account INSIDE transaction with ownership lock
+      const senderResult = await client.query(
+        'SELECT id FROM financial.accounts WHERE user_id = $1 FOR UPDATE',
+        [userId]
+      );
+      if (senderResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return error(res, 'Sender account not found', 404);
+      }
+      const senderAccountId = senderResult.rows[0].id;
+
+      // Get receiver's account by account_number INSIDE transaction
+      const receiverResult = await client.query(
+        'SELECT id FROM financial.accounts WHERE account_number = $1 FOR UPDATE',
+        [to_account_number]
+      );
+      if (receiverResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return error(res, 'Receiver account not found', 404);
+      }
+      const receiverAccountId = receiverResult.rows[0].id;
+
+      // Prevent self-transfer
+      if (senderAccountId === receiverAccountId) {
+        await client.query('ROLLBACK');
+        return error(res, 'Cannot transfer to your own account', 400);
+      }
+
+      // Verify sender account ownership (defense in depth)
       const senderVerification = await client.query(
-        'SELECT id FROM financial.accounts WHERE id = $1 AND user_id = $2 FOR UPDATE',
+        'SELECT id FROM financial.accounts WHERE id = $1 AND user_id = $2',
         [senderAccountId, userId]
       );
       if (senderVerification.rows.length === 0) {
         await client.query('ROLLBACK');
-        return error(res, 'Sender account not found or access denied', 404);
+        return error(res, 'Sender account access denied', 404);
       }
 
       // Get sender balance for validation
