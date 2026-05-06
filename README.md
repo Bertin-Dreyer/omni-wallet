@@ -6,6 +6,20 @@ A production-grade financial account system built on a double-entry ledger, wher
 
 ---
 
+## API Documentation
+
+Interactive API documentation is available via Swagger UI at `/api-docs` when the server is running. The documentation includes:
+
+- Complete endpoint specifications with request/response schemas
+- Authentication flow diagrams
+- Error response formats
+- Rate limiting information
+- Security requirements for each endpoint
+
+All API endpoints are fully documented with OpenAPI 3.0 compliant specifications, including detailed schema definitions for request bodies and response payloads.
+
+---
+
 ## Dependencies
 
 ### Production Dependencies
@@ -15,10 +29,12 @@ A production-grade financial account system built on a double-entry ledger, wher
 - **zod** (^4.3.6): TypeScript-first schema validation with static type inference
 - **jsonwebtoken** (^9.0.3): JSON Web Token implementation (symmetric and asymmetric)
 - **bcrypt** (^6.0.0): Password hashing library with salt rounds
-- **express-rate-limit** (^8.3.1): Rate limiting middleware for Express applications
+- **express-rate-limit** (^8.0.0): Rate limiting middleware for Express applications
 - **helmet** (^8.1.0): Security middleware that sets various HTTP headers
 - **cors** (^2.8.6): Cross-origin resource sharing middleware
 - **dotenv** (^17.3.1): Loads environment variables from .env file
+- **swagger-jsdoc** (^6.2.8): Generates swagger documentation from JSDoc comments
+- **swagger-ui-express** (^5.0.1): Middleware to serve Swagger UI
 
 ### Development Dependencies
 
@@ -54,6 +70,7 @@ A production-grade financial account system built on a double-entry ledger, wher
 - **Validation Layer**: Zod schemas for request/response validation
 - **ORM-Less Approach**: Raw SQL with `$1, $2` parameterization for performance transparency and SQL visibility
 - **Production Hardening**: Connection pooling, graceful shutdown, comprehensive logging
+- **API Documentation**: Interactive Swagger UI with complete endpoint specifications
 
 ### Observability & Operability
 
@@ -260,6 +277,8 @@ npm run seed
 
 # Start development server
 npm run dev
+
+# Access API documentation at http://localhost:3000/api-docs after starting the server
 ```
 
 ### Environment Variables
@@ -365,6 +384,7 @@ curl -X GET "http://localhost:3000/api/transactions/me?page=1&limit=10&from=2026
 - **Type Safety**: JSDoc comments + implicit typing (consider migrating to TypeScript v5.x)
 - **Testing Strategy**: Unit tests with Jest (WIP), integration tests with Supertest
 - **Database Testing**: Transactions wrapped in test rollbacks
+- **API Documentation**: Interactive Swagger UI with complete endpoint specifications
 
 ### Key Architectural Decisions
 
@@ -378,12 +398,17 @@ curl -X GET "http://localhost:3000/api/transactions/me?page=1&limit=10&from=2026
    - Proper isolation levels (`READ COMMITTED`) to prevent anomalies
    - Savepoints for nested operations where needed
 
-3. **Ledger-Centric Balance Calculation**:
+3. **API Documentation**:
+   - Comprehensive Swagger UI documentation at `/api-docs`
+   - Interactive endpoint specifications with request/response examples
+   - Complete schema definitions for all API operations
+
+4. **Ledger-Centric Balance Calculation**:
    - Eliminates balance drift from application bugs
    - Enables point-in-time balance reconstruction
    - Supports complex financial reporting (FIFO/LIFO, etc.)
 
-4. **Idempotency as First-Class Concern**:
+5. **Idempotency as First-Class Concern**:
    - UUID v4 keys generated client-side or server-side
    - Unique constraint on `transactions.idempotency_key`
    - Safe retries without financial risk
