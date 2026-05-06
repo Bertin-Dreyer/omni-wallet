@@ -7,7 +7,7 @@ import logger from './middleware/logger.js';
 import errorHandler from './middleware/errorHandler.js';
 import accountsRouter from './routes/accounts.js';
 import transactionsRouter from './routes/transactions.js';
-import { financialLimiter, authLimiter } from './middleware/rateLimiter.js';
+import { financialLimiter } from './middleware/rateLimiter.js';
 
 const app = express();
 

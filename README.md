@@ -1,196 +1,428 @@
-# Omni Wallet System Documentation
+# Omni Wallet
 
-## Project Overview
+> **Omni Wallet** is the first module of **OMNIPAY-Legacy** — a personal tribute to your late father's work building the infrastructure that processed government pension distributions across South Africa for Old Mutual's OmniPay division.
 
-This is a financial wallet system built with Node.js, Express, and PostgreSQL. It provides a complete backend for wallet operations including user authentication, account management, and transaction processing.
+A production-grade financial account system built on a double-entry ledger, where balances are **always calculated from ledger entries (never stored)**, all mutations are wrapped in explicit transaction blocks, and every financial operation includes idempotency keys with a full audit trail. Engineered to the exacting standards of real fintech infrastructure — not a tutorial project.
 
-## System Architecture
+---
 
-### Core Components
-1. **Authentication System** - JWT-based authentication with refresh tokens
-2. **Account Management** - User account creation and management
-3. **Transaction Processing** - Financial transaction handling with double-entry accounting
-4. **Security Layer** - Rate limiting, input validation, and middleware protection
-5. **Database Layer** - PostgreSQL with connection pooling
+## Dependencies
 
-## Key Files and Modules
+### Production Dependencies
 
-### Routes
-- `src/routes/auth.js` - Authentication endpoints (register, login, refresh, logout)
-- `src/routes/accounts.js` - Account management endpoints (get account info, balance, deposit, transfer)
-- `src/routes/transactions.js` - Transaction history endpoints
+- **express** (^5.2.1): Fast, unopinionated, minimalist web framework for Node.js
+- **pg** (^8.20.0): PostgreSQL client for Node.js
+- **zod** (^4.3.6): TypeScript-first schema validation with static type inference
+- **jsonwebtoken** (^9.0.3): JSON Web Token implementation (symmetric and asymmetric)
+- **bcrypt** (^6.0.0): Password hashing library with salt rounds
+- **express-rate-limit** (^8.3.1): Rate limiting middleware for Express applications
+- **helmet** (^8.1.0): Security middleware that sets various HTTP headers
+- **cors** (^2.8.6): Cross-origin resource sharing middleware
+- **dotenv** (^17.3.1): Loads environment variables from .env file
 
-### Middleware
-- `src/middleware/authenticate.js` - JWT authentication middleware
-- `src/middleware/rateLimiter.js` - Rate limiting for security
-- `src/middleware/logger.js` - Request logging
-- `src/middleware/errorHandler.js` - Centralized error handling
+### Development Dependencies
 
-### Database
-- `src/db/pool.js` - PostgreSQL connection pooling configuration
-- `src/db/schema/` - Database schema files (not included in this view)
+- **jest** (^30.3.0): JavaScript testing framework
+- **supertest** (^7.2.2): HTTP assertions library for testing Express applications
+- **@playwright/test** (^1.59.1): End-to-end testing framework
+- **playwright** (^1.59.1): Browser automation framework
+- **nodemon** (^3.1.14): Utility for automatically restarting Node.js applications
 
-### Utilities
-- `src/utils/tokens.js` - JWT token generation and validation
-- `src/utils/response.js` - Standardized API response formatting
-- `src/utils/validation.js` - Input validation utilities
+---
 
-## Database Structure (Overview)
+## Key Features
 
-### Identity Schema
-- `users` - User accounts with email, password hash, and status
-- `refresh_tokens` - Refresh token storage for session management
-- `kyc_profiles` - User KYC (Know Your Customer) information
-- `popia_consents` - Privacy consent records
+### Financial Integrity
 
-### Financial Schema  
-- `accounts` - User financial accounts with balance management
-- `transactions` - Financial transactions between accounts
-- `ledger_entries` - Individual ledger entries for double-entry accounting
+- **True Double-Entry Ledger**: Every transaction creates two ledger entries (debit/credit); balances computed dynamically via `SUM(ledger_entries)` — no cached balances prone to drift
+- **Idempotency Guarantees**: UUID-based idempotency keys on all financial endpoints prevent duplicate processing from retries
+- **Explicit Transactions**: All mutations wrapped in `BEGIN; ... COMMIT;` blocks with proper isolation levels
+- **Audit-First Design**: Database-level triggers capture every change to financial tables in immutable audit logs
 
-## Authentication Flow
+### Enterprise Security
 
-### 1. Registration
-- User submits name, email, and password
-- Password is hashed using bcrypt
-- New user record is created in the database
-- KYC profile and consent records are created
-- A new account is generated with a random account number
-- Access and refresh tokens are generated and returned
+- **Defense-in-Depth**: Helmet.js, CORS, rate limiting, bcrypt password hashing
+- **Authentication**: JWT with short-lived access tokens + HTTP-only refresh token rotation
+- **Data Protection**: Generic error messages (no stack traces), parameterized queries (SQL injection prevention)
+- **BOLA Prevention**: Ownership verified in every financial query (`WHERE user_id = $1`)
+- **Regulatory Compliance**: FICA/POPIA-ready identity verification flows
 
-### 2. Login
-- User provides email and password
-- Password is verified against stored hash
-- User status is checked (must be active)
-- New access and refresh tokens are generated
-- Refresh token is stored in database for future validation
+### Technical Excellence
 
-### 3. Token Management
-- Access tokens are short-lived (typically 15 minutes)
-- Refresh tokens are long-lived (typically 7 days)
-- Refresh tokens are stored hashed in database with expiration
-- Token refresh mechanism allows for seamless session continuation
+- **Node.js v24** + **Express 5** (ESM native) with async/await throughout
+- **PostgreSQL 15** with UUID primary keys, CHECK constraints, and indexed foreign keys
+- **Validation Layer**: Zod schemas for request/response validation
+- **ORM-Less Approach**: Raw SQL with `$1, $2` parameterization for performance transparency and SQL visibility
+- **Production Hardening**: Connection pooling, graceful shutdown, comprehensive logging
 
-### 4. Rate Limiting
-- Authentication endpoints: 3 requests per 15 minutes per IP
-- Financial endpoints: 20 requests per 15 minutes per IP
-- Prevents brute force attacks and abuse
+### Observability & Operability
 
-## Account Management
+- **Structured Logging**: Request-ID correlation, JSON-formatted logs for ELK ingestion
+- **Health Checks**: Liveness/readiness endpoints
+- **Database Migrations**: Version-controlled SQL with down migrations
+- **Seed Data**: System accounts (SYSTEM_CASH, SYSTEM_FEE, SYSTEM_SUSPENSE) for proper double-entry balancing
 
-### Account Endpoints
+---
 
-#### GET /accounts/me
-- Returns the user's account information
-- Includes account number, currency, status, and creation timestamp
+## Technical Architecture
 
-#### GET /accounts/me/balance
-- Returns the user's current account balance
-- Calculates balance using ledger entries with proper double-entry accounting
+### Three-Schema Design
 
-#### POST /accounts/deposit
-- Deposits funds into the user's account
-- Requires amount_cents (positive integer) and description
-- Uses idempotency key to prevent duplicate deposits
-- Creates ledger entries for the deposit transaction
-- Returns transaction details and new balance
+| Schema      | Purpose                                                              |
+| ----------- | -------------------------------------------------------------------- |
+| `identity`  | Users, authentication, FICA/POPIA compliance data (KYC/AML)          |
+| `financial` | Core ledger: accounts, transactions, ledger entries, system accounts |
+| `audit`     | Immutable change logs via `pg_triggers` on all financial tables      |
 
-#### POST /accounts/transfer
-- Transfers funds from user's account to another user's account
-- Requires to_account_number (10-digit account number), amount_cents (positive integer), and description
-- Uses idempotency key to prevent duplicate transfers
-- Validates sufficient funds in sender's account
-- Creates ledger entries for both sender (DEBIT) and receiver (CREDIT)
-- Returns transaction details and new balance
+### Core Financial Tables
 
-## Transaction Processing
+```sql
+-- Accounts belong to users, hold currency-specific balances (calculated)
+CREATE TABLE financial.accounts(
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES identity.users(id),
+  account_number VARCHAR(10) UNIQUE,
+  currency CHAR(3) CHECK (currency IN ('ZAR','USD','EUR')),
+  status VARCHAR(10) -- ACTIVE/PENDING/SUSPENDED/CLOSED
+);
 
-### Double-Entry Accounting
-- Each transaction affects two accounts (sender and receiver)
-- Transactions are stored with proper reference numbers
-- Date filtering and pagination support for transaction history
+-- Financial movements with idempotency keys
+CREATE TABLE financial.transactions(
+  id UUID PRIMARY KEY,
+  reference VARCHAR(20) UNIQUE,
+  type VARCHAR(10) CHECK (type IN ('DEPOSIT','WITHDRAWAL','TRANSFER','REFUND')),
+  status VARCHAR(10) CHECK (status IN ('PENDING','COMPLETED','FAILED')),
+  amount_cents BIGINT CHECK (amount_cents > 0),
+  idempotency_key UUID UNIQUE, -- Critical for retry safety
+  from_account_id UUID REFERENCES financial.accounts(id),
+  to_account_id UUID REFERENCES financial.accounts(id),
+  processed_at TIMESTAMPTZ
+);
 
-### API Endpoints
-- `GET /transactions/me` - Get user transaction history with pagination
-- Supports date filtering (from/to parameters)
-- Returns transaction details including amount, currency, description
+-- The source of truth: never store balances, always calculate
+CREATE TABLE financial.ledger_entries(
+  id UUID PRIMARY KEY,
+  transaction_id UUID REFERENCES financial.transactions(id),
+  account_id UUID REFERENCES financial.accounts(id),
+  amount_cents BIGINT, -- Negative for credits, positive for debits (or vice versa per convention)
+  entry_type VARCHAR(10) CHECK (entry_type IN ('DEBIT','CREDIT')),
+  balance_cents BIGINT -- Running balance after this entry (for reporting efficiency)
+);
+```
 
-## Security Features
+### Transaction Flow Example
 
-- JWT-based authentication with proper token rotation
-- Password hashing using bcrypt
-- Input validation with Zod schemas
-- Rate limiting to prevent abuse
-- CORS protection
-- Helmet.js for HTTP header security
-- Centralized error handling
-- Secure database connection handling
+1. User initiates deposit: `POST /accounts/deposit` with idempotency key
+2. Service validates, begins transaction:
+   ```sql
+   BEGIN;
+   INSERT INTO financial.transactions (...) VALUES (...);
+   INSERT INTO financial.ledger_entries (transaction_id, account_id, amount_cents, entry_type, balance_cents)
+     VALUES (txn_id, user_account_id, +amount, 'CREDIT', new_balance);
+   INSERT INTO financial.ledger_entries (transaction_id, account_id, amount_cents, entry_type, balance_cents)
+     VALUES (txn_id, system_cash_account_id, -amount, 'DEBIT', system_new_balance);
+   COMMIT;
+   ```
+3. Balance query: `SELECT SUM(amount_cents) FROM financial.ledger_entries WHERE account_id = $1`
 
-## Configuration
+---
 
-Configuration is managed through `src/config/index.js` which handles environment variables and settings for:
-- Database connection URLs
-- JWT secrets and expiration times
-- CORS settings
-- Application port
-- Environment-specific settings
+## Security Deep Dive
 
-## Deployment
+### Authentication Flow
 
-The application uses environment variables for configuration:
-- `DB_APP_URL` - Database connection string
-- `JWT_ACCESS_SECRET` - Secret for access token signing
-- `JWT_REFRESH_SECRET` - Secret for refresh token signing
-- `NODE_ENV` - Environment setting (production, development)
+```mermaid
+sequenceDiagram
+    participant User
+    participant API
+    participant DB
+    User->>API: POST /auth/login {email, password}
+    API->>DB: Verify credentials (bcrypt)
+    DB-->>API: User record
+    API->>API: Generate access token (15min) + refresh token (7d)
+    API-->>User: {access_token, refresh_token}
+    User->>API: POST /accounts/deposit {Bearer access_token}
+    API->>API: Validate JWT signature & expiry
+    API->>DB: Verify user_id owns target account
+    API->>DB: Insert transaction with idempotency check
+    API-->>User: 201 {transaction_id}
+```
 
-## API Response Format
+### Critical Protections
 
-All API responses follow a consistent format:
-- Success responses: `{ status: true, data: {...}, message: "..." }`
-- Error responses: `{ status: false, error: "..." }`
+- **Rate Limiting**: Per-IP and per-user limits on financial endpoints (`financialLimiter` middleware)
+- **Header Security**: Helmet with strict CSP, HSTS, XSS protection
+- **Error Handling**: Centralized handler returns generic messages in production (`Internal server error`)
+- **Data Minimization**: JWTs contain only user ID + roles; no PII in tokens
+- **Timeouts**: Database statement timeouts, connection idle timeouts
 
-## Code Quality and Standards
+---
 
-- ES6+ JavaScript with modern syntax
-- TypeScript type definitions (when available)
-- Modular architecture with clear separation of concerns
-- Comprehensive input validation
-- Proper error handling and logging
-- Security best practices
+## API Reference
 
-## Key Technical Concepts
+### Base URL: `/api`
 
-### Pagination
-- Implemented with OFFSET/LIMIT pattern
-- Supports page number and limit parameters
-- Returns pagination metadata for client-side UI
+All endpoints require JWT Bearer token in `Authorization` header (except auth routes).
 
-### Date Filtering
-- Uses PostgreSQL TIMESTAMPTZ for timezone-aware dates
-- Supports inclusive date ranges with 'from' and 'to' parameters
-- Proper handling of date comparisons in SQL queries
+#### Authentication (`/api/auth`)
 
-### Transaction Processing
-- Atomic database operations with BEGIN/COMMIT/ROLLBACK
-- Double-entry accounting model
-- Proper exception handling for database transactions
+| Method | Endpoint    | Description                                    |
+| ------ | ----------- | ---------------------------------------------- |
+| `POST` | `/register` | User signup with FICA compliance check         |
+| `POST` | `/login`    | Email/password login → access + refresh tokens |
+| `POST` | `/refresh`  | Rotate refresh token for new access token      |
+| `POST` | `/logout`   | Invalidate refresh token                       |
 
-### Security
-- Secure token management with database storage
-- Session management with refresh tokens
-- Rate limiting for both authentication and financial endpoints
-- Input sanitization and validation
+**POST /auth/register**
 
-## Error Handling
+- **Schema**: `{ name: string, email: string, password: string }`
+- **Response**: `{ status: true, message: "Registration successful", data: { user: {...}, accessToken: string, refreshToken: string } }`
 
-- Centralized error handler middleware
-- Proper HTTP status codes for different error types
-- Consistent error response structure
-- Detailed logging for debugging
+**POST /auth/login**
 
-## Performance Considerations
+- **Schema**: `{ email: string, password: string }`
+- **Response**: `{ status: true, message: "Login successful", data: { user: {...}, accessToken: string, refreshToken: string } }`
 
-- Database connection pooling
-- Indexing on frequently queried columns
-- Efficient SQL queries with proper parameterization
-- Rate limiting to prevent resource exhaustion
+**POST /auth/refresh**
+
+- **Schema**: `{ refreshToken: string }`
+- **Response**: `{ status: true, message: "Token refreshed", data: { accessToken: string, refreshToken: string } }`
+
+#### Accounts (`/api/accounts`)
+
+| Method | Endpoint      | Description                            |
+| ------ | ------------- | -------------------------------------- |
+| `GET`  | `/me`         | Get user's account details             |
+| `GET`  | `/me/balance` | Get calculated balance                 |
+| `POST` | `/deposit`    | Fund wallet (requires idempotency key) |
+| `POST` | `/transfer`   | Transfer between accounts              |
+
+**GET /accounts/me**
+
+- **Response**: `{ status: true, message: "OK", data: { id, account_number, currency, status, created_at } }`
+
+**GET /accounts/me/balance**
+
+- **Response**: `{ status: true, message: "OK", data: { balance_cents: number } }`
+
+**POST /accounts/deposit**
+
+- **Headers**: `Idempotency-Key: <uuid>`
+- **Schema**: `{ amount_cents: number, description: string }`
+- **Response**: `{ status: true, message: "Deposit successful", data: { transaction: {...}, balance: number } }`
+
+**POST /accounts/transfer**
+
+- **Headers**: `Idempotency-Key: <uuid>`
+- **Schema**: `{ to_account_number: string, amount_cents: number, description: string }`
+- **Response**: `{ status: true, message: "Transfer successful", data: { transaction: {...}, balance: number } }`
+
+#### Transactions (`/api/transactions`)
+
+| Method | Endpoint | Description                      |
+| ------ | -------- | -------------------------------- |
+| `GET`  | `/me`    | Transaction history with filters |
+
+**GET /transactions/me**
+
+- **Query Params**: `page=1&limit=20&from=2026-01-01&to=2026-01-31`
+- **Response**: `{ status: true, message: "OK", data: { transactions: [...], pagination: { page, limit, total, totalPages, hasNextPage, hasPrevPage } } }`
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js v24.x
+- PostgreSQL 15.x
+- Git
+
+### Installation
+
+```bash
+# Clone repository
+git clone https://github.com/your-org/omni-wallet.git
+cd omni-wallet
+
+# Install dependencies
+npm ci
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your database credentials and JWT secrets
+
+# Run migrations (creates schemas, tables, indexes, triggers)
+npm run migrate
+
+# Seed system accounts
+npm run seed
+
+# Start development server
+npm run dev
+```
+
+### Environment Variables
+
+| Variable                 | Type | Required | Description                                 | Default/Example                                            |
+| ------------------------ | ---- | -------- | ------------------------------------------- | ---------------------------------------------------------- |
+| `PORT`                   | int  | Yes      | Server port                                 | `3000`                                                     |
+| `NODE_ENV`               | str  | Yes      | Environment mode                            | `development`                                              |
+| `DATABASE_URL`           | str  | Yes      | Superuser DB URL for migrations             | `postgresql://postgres:pass@localhost:5432/omnipay_legacy` |
+| `DB_APP_USER`            | str  | Yes      | Restricted app user                         | `omni_app`                                                 |
+| `DB_APP_PASSWORD`        | str  | Yes      | App user password                           | `your_strong_password_here`                                |
+| `DB_APP_URL`             | str  | Yes      | App DB URL                                  | `postgresql://omni_app:pass@localhost:5432/omnipay_legacy` |
+| `JWT_ACCESS_SECRET`      | str  | Yes      | Access token secret (64+ chars)             | `your_64_character_random_string_here`                     |
+| `JWT_REFRESH_SECRET`     | str  | Yes      | Refresh token secret (64+ chars, different) | `different_64_character_random_string_here`                |
+| `JWT_ACCESS_EXPIRES_IN`  | str  | No       | Access token expiry                         | `15m`                                                      |
+| `JWT_REFRESH_EXPIRES_IN` | str  | No       | Refresh token expiry                        | `7d`                                                       |
+| `CORS_ORIGIN`            | str  | Yes      | Allowed CORS origins                        | `http://localhost:5173`                                    |
+
+### Database Setup
+
+1. Create PostgreSQL database: `omnipay_legacy`
+2. Create superuser: `postgres` with password
+3. Create restricted user: `omni_app` with password
+4. Grant permissions as per `006_permissions.sql`
+5. Run migrations in order
+
+---
+
+## Usage Examples
+
+### Register a User
+
+```bash
+curl -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "John Doe",
+    "email": "john@example.com",
+    "password": "securepassword123"
+  }'
+```
+
+### Login
+
+```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com",
+    "password": "securepassword123"
+  }'
+# Returns { accessToken, refreshToken }
+```
+
+### Deposit Funds
+
+```bash
+curl -X POST http://localhost:3000/api/accounts/deposit \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount_cents": 10000,
+    "description": "Initial deposit"
+  }'
+```
+
+### Check Balance
+
+```bash
+curl -X GET http://localhost:3000/api/accounts/me/balance \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+### Transfer Funds
+
+```bash
+curl -X POST http://localhost:3000/api/accounts/transfer \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to_account_number": "1234567890",
+    "amount_cents": 5000,
+    "description": "Payment for services"
+  }'
+```
+
+### Transaction History
+
+```bash
+curl -X GET "http://localhost:3000/api/transactions/me?page=1&limit=10&from=2026-01-01" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+## Development Practices
+
+### Code Quality
+
+- **ESLint** + **Prettier** configured for consistent formatting
+- **Type Safety**: JSDoc comments + implicit typing (consider migrating to TypeScript v5.x)
+- **Testing Strategy**: Unit tests with Jest (WIP), integration tests with Supertest
+- **Database Testing**: Transactions wrapped in test rollbacks
+
+### Key Architectural Decisions
+
+1. **Raw SQL over ORM**:
+   - Performance predictability for financial operations
+   - Full visibility into executed queries for auditability
+   - Avoids ORM leakage and unexpected query patterns
+
+2. **Explicit Transaction Management**:
+   - No automatic commits; every mutation controlled
+   - Proper isolation levels (`READ COMMITTED`) to prevent anomalies
+   - Savepoints for nested operations where needed
+
+3. **Ledger-Centric Balance Calculation**:
+   - Eliminates balance drift from application bugs
+   - Enables point-in-time balance reconstruction
+   - Supports complex financial reporting (FIFO/LIFO, etc.)
+
+4. **Idempotency as First-Class Concern**:
+   - UUID v4 keys generated client-side or server-side
+   - Unique constraint on `transactions.idempotency_key`
+   - Safe retries without financial risk
+
+---
+
+## Why This Matters for Technical Leads
+
+### Beyond the Tutorial
+
+Most fintech demos showcase surface-level features. Omni Wallet implements the **invisible infrastructure** that prevents financial loss:
+
+- **Idempotency** solves the $1B+ problem of duplicate payments in distributed systems
+- **Double-entry ledgering** provides mathematical proof of money conservation
+- **Database-level auditing** satisfies regulators (SARB, PCI-DSS) without application logging gaps
+- **Explicit transactions** prevent the lost-update anomaly that corrupted balances at scale
+
+### Production-Ready Patterns
+
+- **Defensive Financial Math**: All calculations in `BIGINT` cents to avoid floating-point errors
+- **Fail-Fast Validation**: Zod schemas reject invalid requests before hitting the DB
+- **Observable Transactions**: Every financial operation logs to audit table with user context
+- **Operational Simplicity**: Single process, externalized config, no hidden state
+
+### Team Onboarding Value
+
+The codebase includes **teaching comments** in critical sections (see `src/routes/transactions.js`) explaining:
+
+- Why pagination uses `OFFSET/LIMIT` with enforcement of max limits
+- How `TIMESTAMPTZ` enables accurate cross-zone date filtering
+- Query patterns for double-entry systems (sender OR receiver lookups)
+- This accelerates ramp-up for engineers new to fintech principles
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+> **Omni Wallet** isn't just code — it's a ledger of integrity, built to honor a legacy of financial trust. Every line reflects the principle that in fintech, correctness isn't optional; it's the foundation.

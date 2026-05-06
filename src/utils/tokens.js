@@ -18,8 +18,13 @@ export function generateTokens(userId) {
   return { accessToken, refreshToken };
 }
 
-export function verifyToken(token, secret) {
-  return jwt.verify(token, secret);
+export async function verifyToken(token, secret) {
+  return new Promise((resolve, reject) => {
+    jwt.verify(token, secret, (err, decoded) => {
+      if (err) return reject(err);
+      resolve(decoded);
+    });
+  });
 }
 
 export function hashToken(token) {
