@@ -39,6 +39,85 @@ const router = express.Router();
 // All routes need authentication
 router.use(authenticateJWT);
 
+/**
+ * @swagger
+ * tags:
+ *   - name: Transactions
+ *     description: Transaction history endpoints
+ */
+
+/**
+ * @swagger
+ * /transactions/me:
+ *   get:
+ *     tags: [Transactions]
+ *     summary: Get transaction history
+ *     description: Retrieve the authenticated user's transaction history
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: page
+ *         in: query
+ *         description: Page number
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - name: limit
+ *         in: query
+ *         description: Number of items per page
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - name: from
+ *         in: query
+ *         description: Start date filter (YYYY-MM-DD)
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - name: to
+ *         in: query
+ *         description: End date filter (YYYY-MM-DD)
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       "200":
+ *         description: Transaction history retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     transactions:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Transaction'
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                         limit:
+ *                           type: integer
+ *                         total:
+ *                           type: integer
+ *                         totalPages:
+ *                           type: integer
+ *                         hasNextPage:
+ *                           type: boolean
+ *                         hasPrevPage:
+ *                           type: boolean
+ *       "404":
+ *         description: Account not found
+ *       "500":
+ *         description: Internal server error
+ */
+
 // ============================================================
 // GET /transactions/me - Transaction History
 // ============================================================
@@ -55,7 +134,7 @@ router.get('/me', async (req, res) => {
 
     // STEP 1: Look up the user's account ID
     // ============================================================
-    // We need the account ID to find transactions where user 
+    // We need the account ID to find transactions where user
     // is sender (from_account_id) OR receiver (to_account_id)
     // Each user has ONE account in this simplified system
     const accountResult = await pool.query(
@@ -97,10 +176,10 @@ router.get('/me', async (req, res) => {
     // ============================================================
     // We'll build the query dynamically based on which filters are present
     // This is more flexible than writing separate queries for each combination
-    
+
     // Base query - get transactions where user is sender OR receiver
     let query = `
-      SELECT 
+      SELECT
         t.id,
         t.reference,
         t.type,
@@ -111,7 +190,7 @@ router.get('/me', async (req, res) => {
         t.processed_at,
         t.created_at,
         -- These fields show the other party in the transaction
-        CASE 
+        CASE
           -- If user is sender, show receiver details
           WHEN t.from_account_id = $1 THEN t.to_account_id
           -- If user is receiver, show sender details
@@ -151,7 +230,7 @@ router.get('/me', async (req, res) => {
     // We need to know total rows to calculate totalPages
     // Replace SELECT columns with COUNT(*)
     const countQuery = query.replace(/SELECT .* FROM/, 'SELECT COUNT(*) FROM');
-    
+
     const countResult = await pool.query(countQuery, queryParams);
     const total = parseInt(countResult.rows[0].count);
 
@@ -162,7 +241,7 @@ router.get('/me', async (req, res) => {
     // OFFSET: Number of rows to skip (formula: (page - 1) * limit)
     query += ` ORDER BY t.created_at DESC`;
     query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-    
+
     queryParams.push(limit, (page - 1) * limit);
 
     // STEP 7: Execute the query
@@ -187,7 +266,6 @@ router.get('/me', async (req, res) => {
         hasPrevPage: page > 1,
       },
     });
-
   } catch (err) {
     console.error('GET /transactions/me error:', err);
     return error(res, 'Internal server error', 500);

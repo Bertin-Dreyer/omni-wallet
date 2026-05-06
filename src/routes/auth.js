@@ -10,6 +10,13 @@ import { config } from '../config/index.js';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   - name: Authentication
+ *     description: User authentication endpoints
+ */
+
 router.use(authLimiter);
 
 // --- Validation Schemas ---
@@ -71,6 +78,41 @@ async function findValidRefreshToken(token) {
 }
 
 // --- POST /auth/register ---
+
+/**
+ * @swagger
+ * /auth/register:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: User registration
+ *     description: Register a new user account
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UserRegistration'
+ *     responses:
+ *       "201":
+ *         description: User registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   $ref: '#/components/schemas/UserRegistrationResponse'
+ *       "400":
+ *         description: Bad Request
+ *       "409":
+ *         description: Email already registered
+ *       "500":
+ *         description: Registration failed
+ */
 
 router.post('/register', async (req, res) => {
   try {
@@ -139,6 +181,41 @@ router.post('/register', async (req, res) => {
 
 // --- POST /auth/login ---
 
+/**
+ * @swagger
+ * /auth/login:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: User login
+ *     description: Authenticate user credentials
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UserLogin'
+ *     responses:
+ *       "200":
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   $ref: '#/components/schemas/UserLoginResponse'
+ *       "400":
+ *         description: Bad Request
+ *       "401":
+ *         description: Invalid credentials
+ *       "500":
+ *         description: Login failed
+ */
+
 router.post('/login', async (req, res) => {
   try {
     const parseResult = loginSchema.safeParse(req.body);
@@ -185,6 +262,41 @@ router.post('/login', async (req, res) => {
 
 // --- POST /auth/refresh ---
 
+/**
+ * @swagger
+ * /auth/refresh:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Refresh token
+ *     description: Obtain a new access token using a refresh token
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RefreshToken'
+ *     responses:
+ *       "200":
+ *         description: Token refreshed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   $ref: '#/components/schemas/RefreshTokenResponse'
+ *       "400":
+ *         description: Bad Request
+ *       "401":
+ *         description: Invalid or expired refresh token
+ *       "500":
+ *         description: Token refresh failed
+ */
+
 router.post('/refresh', async (req, res) => {
   try {
     const parseResult = refreshSchema.safeParse(req.body);
@@ -217,6 +329,37 @@ router.post('/refresh', async (req, res) => {
 });
 
 // --- POST /auth/logout ---
+
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: User logout
+ *     description: Invalidate refresh token to logout user
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/LogoutRequest'
+ *     responses:
+ *       "200":
+ *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       "500":
+ *         description: Internal server error
+ */
 
 router.post('/logout', async (req, res) => {
   try {

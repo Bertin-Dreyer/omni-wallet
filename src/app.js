@@ -8,6 +8,8 @@ import errorHandler from './middleware/errorHandler.js';
 import accountsRouter from './routes/accounts.js';
 import transactionsRouter from './routes/transactions.js';
 import { financialLimiter } from './middleware/rateLimiter.js';
+import swagger from './swagger.js';
+import swaggerUi from 'swagger-ui-express';
 
 const app = express();
 
@@ -15,6 +17,9 @@ app.use(express.json());
 app.use(cors({ origin: config.cors.origin }));
 app.use(helmet());
 app.use(logger);
+
+// Swagger documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swagger));
 
 // Health check
 app.get('/', (req, res) => {
