@@ -1,6 +1,6 @@
 # Omni Wallet
 
-> **Omni Wallet** is the first module of **OMNIPAY-Legacy** — a personal tribute to your late father's work building the infrastructure that processed government pension distributions across South Africa for Old Mutual's OmniPay division.
+> **Omni Wallet** is the first module of **OMNIPAY-Legacy** — a personal tribute to my late father's work building the infrastructure that processed government pension distributions across South Africa for Old Mutual's OmniPay division.
 
 A production-grade financial account system built on a double-entry ledger, where balances are **always calculated from ledger entries (never stored)**, all mutations are wrapped in explicit transaction blocks, and every financial operation includes idempotency keys with a full audit trail. Engineered to the exacting standards of real fintech infrastructure — not a tutorial project.
 
